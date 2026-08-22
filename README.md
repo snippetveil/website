@@ -24,5 +24,12 @@ longer true.**
 
 ## Deploying
 
-Cloudflare Pages, connected to this repository. Framework preset *None*, no build command, output
-directory `public`. Pushing to `main` publishes.
+A Cloudflare Worker serving static assets — the successor to Pages, and where the dashboard's
+"Connect to Git" now lands. `wrangler.jsonc` declares `public/` as the asset directory and no
+Worker script, so the files are served as-is.
+
+- Build command: none.
+- Deploy command: `npx wrangler deploy`.
+- Pushing to `main` redeploys.
+
+`_headers` is honoured by Workers static assets, same as it was under Pages.

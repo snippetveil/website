@@ -1,0 +1,10 @@
+{
+  // Static assets only — there is no Worker script, so no "main" entry. Cloudflare serves the
+  // files in public/ directly, including _headers and robots.txt.
+  "$schema": "https://json.schemastore.org/wrangler.json",
+  "name": "snippetveil",
+  "compatibility_date": "2026-08-22",
+  "assets": {
+    "directory": "./public"
+  }
+}
