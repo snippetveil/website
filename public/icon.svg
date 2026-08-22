@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" width="40" height="40">
+  <style>
+    .bar { fill: #6C707E } .token { fill: #7B61FF }
+    @media (prefers-color-scheme: dark) { .bar { fill: #9DA0A8 } .token { fill: #9B84FF } }
+  </style>
+  <rect class="bar" x="2" y="7" width="22" height="4" rx="2"/>
+  <rect class="bar" x="2" y="15" width="10" height="4" rx="2"/>
+  <rect class="token" x="14" y="15" width="16" height="4" rx="2"/>
+  <rect class="bar" x="2" y="23" width="26" height="4" rx="2"/>
+  <rect class="token" x="2" y="31" width="14" height="4" rx="2"/>
+</svg>

@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SnippetVeil</title>
+<meta name="description" content="Anonymize a Java snippet before you paste it into an AI chat. An IntelliJ IDEA plugin.">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<meta property="og:title" content="SnippetVeil">
+<meta property="og:description" content="Anonymize a Java snippet before you paste it into an AI chat. An IntelliJ IDEA plugin.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://snippetveil.com/">
+<style>
+  :root {
+    --bg: #ffffff;
+    --surface: #f6f7f9;
+    --border: #e3e5e9;
+    --text: #1f2126;
+    --muted: #6c707e;
+    --accent: #6a4ff0;
+    --accent-soft: #f1eeff;
+    --icon-bar: #6C707E;
+    --icon-token: #7B61FF;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181d;
+      --surface: #1d2026;
+      --border: #2c3038;
+      --text: #e6e8ec;
+      --muted: #9da0a8;
+      --accent: #9b84ff;
+      --accent-soft: #24203a;
+      /* The mark is grey bars plus two accent bars, so at this size the distinction IS the accent
+         contrast — a light-tuned icon collapses into a generic "lines of code" glyph on dark. */
+      --icon-bar: #9DA0A8;
+      --icon-token: #9B84FF;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 400 17px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 0 20px;
+  }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 64px 0 80px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 40px; }
+  header svg { display: block; width: 40px; height: 40px; flex: none; }
+  header .bar { fill: var(--icon-bar); }
+  header .token { fill: var(--icon-token); }
+  header h1 { font-size: 26px; letter-spacing: -0.01em; margin: 0; font-weight: 650; }
+  .lede { font-size: 23px; line-height: 1.45; letter-spacing: -0.01em; margin: 0 0 20px; font-weight: 600; }
+  p { margin: 0 0 18px; }
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--muted); margin: 44px 0 14px; font-weight: 600;
+  }
+  ul { margin: 0 0 18px; padding-left: 22px; }
+  li { margin-bottom: 10px; }
+  li strong { font-weight: 620; }
+  a { color: var(--accent); text-decoration: none; border-bottom: 1px solid color-mix(in srgb, var(--accent) 35%, transparent); }
+  a:hover { border-bottom-color: var(--accent); }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--surface); border: 1px solid var(--border); border-radius: 5px; padding: 1px 5px; }
+  .note {
+    background: var(--surface); border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: 8px; padding: 16px 18px; margin: 0 0 18px;
+  }
+  .note p:last-child { margin-bottom: 0; }
+  footer {
+    margin-top: 56px; padding-top: 24px; border-top: 1px solid var(--border);
+    color: var(--muted); font-size: 15px;
+  }
+  footer p { margin: 0 0 8px; }
+  @media (max-width: 560px) {
+    .wrap { padding: 40px 0 56px; }
+    .lede { font-size: 20px; }
+    body { font-size: 16px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40" role="img" aria-label="SnippetVeil">
+      <rect class="bar" x="2" y="7" width="22" height="4" rx="2"/>
+      <rect class="bar" x="2" y="15" width="10" height="4" rx="2"/>
+      <rect class="token" x="14" y="15" width="16" height="4" rx="2"/>
+      <rect class="bar" x="2" y="23" width="26" height="4" rx="2"/>
+      <rect class="token" x="2" y="31" width="14" height="4" rx="2"/>
+    </svg>
+    <h1>SnippetVeil</h1>
+  </header>
+
+  <p class="lede">Anonymize a Java snippet before you paste it into an AI chat.</p>
+
+  <p>An IntelliJ IDEA plugin. Every name your project owns — classes, methods, fields, packages,
+  string literals — is replaced with a placeholder before the snippet leaves the editor. The
+  structure, the control flow, and the libraries you call go as-is.</p>
+
+  <h2>How it works</h2>
+  <ul>
+    <li>Select Java code, right-click, <strong>Copy Anonymized</strong>. The anonymized text is on
+    your clipboard.</li>
+    <li><strong>Anonymize with Preview…</strong> shows the code that will be copied beside its
+    mapping table, with counts. It is the only place you can anonymize <em>less</em> — keep comments
+    for this snippet, or preserve a name SnippetVeil could not resolve.</li>
+    <li><strong>De-anonymize Clipboard</strong> turns the placeholders in a reply back into your
+    real names.</li>
+    <li>The mapping is per-project and stays on your machine. Placeholders are stable across
+    invocations and IDE restarts, so a second snippet never contradicts the first.</li>
+  </ul>
+
+  <h2>No network</h2>
+  <p>SnippetVeil makes no network calls. No networking code — and the repository has been public
+  from the first commit, so this is something you can read rather than take on trust.</p>
+
+  <h2>What SnippetVeil does not hide</h2>
+  <ul>
+    <li><strong>Your stack.</strong> Frameworks, libraries, the identity provider, the persistence
+    layer — preserved by design, because they are what make the snippet answerable.</li>
+    <li><strong>Your structure and your algorithm.</strong> Control flow and logic survive intact.
+    If your proprietary value <em>is</em> the algorithm, SnippetVeil does nothing for you.</li>
+    <li><strong>The prompt you type around the snippet.</strong> SnippetVeil anonymizes the code,
+    not the sentence above it.</li>
+  </ul>
+
+  <h2>What it does not preserve</h2>
+  <ul>
+    <li><strong>The text inside your strings</strong> — a string literal in your own code becomes
+    <code>"str1"</code>.</li>
+    <li><strong>Your comments</strong>, by default.</li>
+    <li><strong>Your stack trace</strong> — it is not anonymized at all.</li>
+  </ul>
+
+  <h2>Non-goals</h2>
+  <p>Not a secret scanner. Java files only — the action does not appear anywhere else.</p>
+
+  <h2>Status</h2>
+  <div class="note">
+    <p><strong>Pre-release.</strong> SnippetVeil is being built in the open and is not yet published
+    to the JetBrains Marketplace. The build-time checks that fail on networking code land before the
+    first release; until then, the evidence for the paragraph above is the commit history itself.</p>
+  </div>
+
+  <h2>Source</h2>
+  <p>Apache-2.0. Source and issue tracker:
+  <a href="https://github.com/snippetveil/snippetveil">github.com/snippetveil/snippetveil</a></p>
+
+  <footer>
+    <p>Contact: <a href="mailto:hello@snippetveil.com">hello@snippetveil.com</a> ·
+    Security reports: <a href="mailto:security@snippetveil.com">security@snippetveil.com</a></p>
+    <p>SnippetVeil is made by Fyodor Skorozhenko, an individual developer.</p>
+  </footer>
+
+</div>
+</body>
+</html>
