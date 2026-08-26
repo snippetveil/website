@@ -121,8 +121,8 @@
   </ul>
 
   <h2>No network</h2>
-  <p>SnippetVeil makes no network calls. No networking code — and the repository has been public
-  from the first commit, so this is something you can read rather than take on trust.</p>
+  <p>SnippetVeil makes no network calls. No networking code — enforced on every pull request,
+  scanned in every release build, and public from the first commit.</p>
 
   <h2>What SnippetVeil does not hide</h2>
   <ul>
@@ -132,6 +132,7 @@
     If your proprietary value <em>is</em> the algorithm, SnippetVeil does nothing for you.</li>
     <li><strong>The prompt you type around the snippet.</strong> SnippetVeil anonymizes the code,
     not the sentence above it.</li>
+    <li><strong>Your stack trace</strong> — it is not anonymized at all.</li>
   </ul>
 
   <h2>What it does not preserve</h2>
@@ -139,7 +140,6 @@
     <li><strong>The text inside your strings</strong> — a string literal in your own code becomes
     <code>"str1"</code>.</li>
     <li><strong>Your comments</strong>, by default.</li>
-    <li><strong>Your stack trace</strong> — it is not anonymized at all.</li>
   </ul>
 
   <h2>Non-goals</h2>
