@@ -116,6 +116,9 @@
     for this snippet, or preserve a name SnippetVeil could not resolve.</li>
     <li><strong>De-anonymize Clipboard</strong> turns the placeholders in a reply back into your
     real names.</li>
+    <li><strong>De-anonymize Clipboard and Paste</strong> does the same and inserts the result at
+    the caret, replacing the selection. It will not paste a reply it could not restore in full, so
+    placeholders never reach your source; the clipboard keeps the anonymized reply either way.</li>
     <li>The mapping is per-project and stays on your machine. Placeholders are stable across
     invocations and IDE restarts, so a second snippet never contradicts the first.</li>
   </ul>
@@ -147,7 +150,7 @@
 
   <h2>Status</h2>
   <div class="note">
-    <p><strong>Published.</strong> v1.0.0 is on the JetBrains Marketplace, and every release is
+    <p><strong>Published.</strong> v1.1.0 is on the JetBrains Marketplace, and every release is
     signed. The build-time checks that fail on networking code are in place: they run on every pull
     request and again on the release itself, and they run from a clone with no account and no
     permission from anyone.</p>
