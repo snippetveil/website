@@ -112,8 +112,16 @@
     <li>Select Java code, right-click, <strong>Copy Anonymized</strong>. The anonymized text is on
     your clipboard.</li>
     <li><strong>Anonymize with Preview…</strong> shows the code that will be copied beside its
-    mapping table, with counts. It is the only place you can anonymize <em>less</em> — keep comments
-    for this snippet, or preserve a name SnippetVeil could not resolve.</li>
+    mapping table, with counts: <code>14 renamed · 3 unknown · 22 preserved · 2 comments
+    stripped</code>. It is the only place you can anonymize <em>less</em> — keep comments for this
+    snippet, or preserve a name and send it exactly as written. Names SnippetVeil could not resolve
+    can be preserved directly; every other name becomes preservable once you unlock the column,
+    which warns you first and is locked again the next time you open the preview.</li>
+    <li><strong>Renaming a placeholder</strong> in that same table gives the model the word your
+    question is about: double-click a Placeholder cell and <code>Type1</code> becomes
+    <code>FilterType1</code>. The stem is yours, the number always stays, and your real name never
+    leaves the machine. Only names this snippet introduced can be renamed — one an earlier snippet
+    already used keeps the name that snippet's replies are written in.</li>
     <li><strong>De-anonymize Clipboard</strong> turns the placeholders in a reply back into your
     real names.</li>
     <li><strong>De-anonymize Clipboard and Paste</strong> does the same and inserts the result at
@@ -150,7 +158,7 @@
 
   <h2>Status</h2>
   <div class="note">
-    <p><strong>Published.</strong> v1.1.0 is on the JetBrains Marketplace, and every release is
+    <p><strong>Published.</strong> v1.2.0 is on the JetBrains Marketplace, and every release is
     signed. The build-time checks that fail on networking code are in place: they run on every pull
     request and again on the release itself, and they run from a clone with no account and no
     permission from anyone.</p>
