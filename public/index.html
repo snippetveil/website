@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SnippetVeil</title>
-<meta name="description" content="Anonymize a Java snippet before you paste it into an AI chat. An IntelliJ IDEA plugin.">
+<meta name="description" content="Anonymize a Java or Kotlin snippet before you paste it into an AI chat. An IntelliJ IDEA plugin.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <meta property="og:title" content="SnippetVeil">
-<meta property="og:description" content="Anonymize a Java snippet before you paste it into an AI chat. An IntelliJ IDEA plugin.">
+<meta property="og:description" content="Anonymize a Java or Kotlin snippet before you paste it into an AI chat. An IntelliJ IDEA plugin.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://snippetveil.com/">
 <style>
@@ -97,7 +97,7 @@
     <h1>SnippetVeil</h1>
   </header>
 
-  <p class="lede">Anonymize a Java snippet before you paste it into an AI chat.</p>
+  <p class="lede">Anonymize a Java or Kotlin snippet before you paste it into an AI chat.</p>
 
   <p>An IntelliJ IDEA plugin. Every name your project owns — classes, methods, fields, packages,
   string literals — is replaced with a placeholder before the snippet leaves the editor. The
@@ -109,8 +109,8 @@
 
   <h2>How it works</h2>
   <ul>
-    <li>Select Java code, right-click, <strong>Copy Anonymized</strong>. The anonymized text is on
-    your clipboard.</li>
+    <li>Select Java or Kotlin code, then right-click → <strong>SnippetVeil</strong> →
+    <strong>Copy Anonymized</strong>. The anonymized text is on your clipboard.</li>
     <li><strong>Anonymize with Preview…</strong> shows the code that will be copied beside its
     mapping table, with counts: <code>14 renamed · 3 unknown · 22 preserved · 2 comments
     stripped</code>. It is the only place you can anonymize <em>less</em> — keep comments for this
@@ -154,11 +154,12 @@
   </ul>
 
   <h2>Non-goals</h2>
-  <p>Not a secret scanner. Java files only — the action does not appear anywhere else.</p>
+  <p>Not a secret scanner. Anonymization is unavailable outside supported source files. The
+  reversal actions are not gated by language.</p>
 
   <h2>Status</h2>
   <div class="note">
-    <p><strong>Published.</strong> v1.2.0 is on the JetBrains Marketplace, and every release is
+    <p><strong>Published.</strong> v1.3.0 is on the JetBrains Marketplace, and every release is
     signed. The build-time checks that fail on networking code are in place: they run on every pull
     request and again on the release itself, and they run from a clone with no account and no
     permission from anyone.</p>
