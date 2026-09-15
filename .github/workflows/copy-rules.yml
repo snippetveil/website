@@ -1,0 +1,31 @@
+# Holds public/index.html to the product repository's copy rules: the banned phrases, the roadmap
+# phrases and the third-party brand names in snippetveil/snippetveil's copy-rules.json, https-only
+# links, and the canonical paragraphs of its README verbatim.
+#
+# Both files are fetched from snippetveil/snippetveil's `main` on every run, unauthenticated (both
+# repositories are public), and **not from a pinned ref**. A rule added there turns this repository
+# red without a commit here, and that is intended: the rule is that no surface says it, and a page
+# that stays green on last month's list does not obey it. The failure names the file it read and
+# where it read it from.
+#
+# No build system: the check is one standard-library Python script.
+name: Copy rules
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  copy-rules:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check public/index.html against snippetveil/snippetveil@main
+        run: python3 checks/copy_rules.py
