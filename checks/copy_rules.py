@@ -22,17 +22,21 @@ proves that the check can fail (see `self_test`) before it reports that the page
 import argparse
 import difflib
 import html
+import json
 import re
 import sys
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
-import json
 
 REPOSITORY = "snippetveil/snippetveil"
 REF = "main"
 RAW = f"https://raw.githubusercontent.com/{REPOSITORY}/{REF}/"
 
+# The canonical markers are looked for inside the listing-copy block only, which is the one place the
+# product build asserts where they are. A marker quoted anywhere else in the README is not the subset.
+LISTING_START = "<!-- listing copy -->"
+LISTING_END = "<!-- listing copy end -->"
 CANONICAL_START = "<!-- canonical -->"
 CANONICAL_END = "<!-- canonical end -->"
 
@@ -45,10 +49,18 @@ WORD_RULES = {
 
 # Tags that sit inside a run of text. Every other tag separates words, so `<code>"str1"</code>.`
 # reads as `"str1".` with no space before the full stop, the way the Markdown side reads it.
-INLINE_TAGS = {"a", "abbr", "b", "code", "em", "i", "kbd", "small", "span", "strong", "sub", "sup", "u"}
+INLINE_TAGS = {"a", "abbr", "b", "code", "em", "i", "kbd", "small", "span", "strong", "sub", "sup", "u", "wbr"}
 
-# A tag whose text is not copy: nobody reads a stylesheet as a claim.
-SKIPPED_TAGS = {"script", "style"}
+# Text that is on the page but not in its reading order. A script's text can still be published
+# copy — structured data is shown in search results — so it is read for words and links; a template
+# is not rendered, so a claim in one does not count as carried. A stylesheet is read for links
+# only, because `cursor: pointer` is a property rather than a brand.
+SKIPPED_TAGS = {"script", "style", "template"}
+
+# The attributes whose values are shown to a reader, and so are copy. An `href` is not: a URL that
+# happens to contain a brand's name is an address, not a reference to the brand. Every attribute
+# but a namespace is read for `http://`, because every one of them can point somewhere.
+COPY_ATTRIBUTES = {"alt", "aria-description", "aria-label", "content", "label", "placeholder", "title", "value"}
 
 
 class Failure(Exception):
@@ -66,7 +78,11 @@ class Source:
 
 def fetch(name, override):
     if override:
-        return Source(name, f"{override} (a local override of {REPOSITORY}@{REF}:{name})", Path(override).read_text("utf-8"))
+        where = f"{override} (a local override of {REPOSITORY}@{REF}:{name})"
+        try:
+            return Source(name, where, Path(override).read_text("utf-8"))
+        except OSError as error:
+            raise Failure(f"Could not read {where}: {error}. Nothing was checked.")
     url = RAW + name
     try:
         with urllib.request.urlopen(url, timeout=30) as response:
@@ -89,15 +105,18 @@ def markdown_text(markdown):
 
 
 class Page(HTMLParser):
-    """A page read three ways: the text of every <p> and <li>, all visible text, and its attributes."""
+    """A page read as: the text of every <p> and <li>, its visible text, the text it does not show
+    in reading order, and its attributes."""
 
     def __init__(self, source):
         super().__init__(convert_charrefs=True)
         self.elements = []
         self.attributes = []
+        self.unrendered = []  # script and template text
+        self.stylesheets = []
         self._text = []
         self._open = []  # [tag, parts] for every <p> and <li> still open
-        self._skipping = 0
+        self._skipped = []  # the SKIPPED_TAGS the parser is inside, innermost last
         self.feed(source)
         self.close()
         while self._open:
@@ -110,19 +129,21 @@ class Page(HTMLParser):
             parts.append(data)
 
     def _finish(self, index):
-        for tag, parts in self._open[index:][::-1]:
+        for _, parts in reversed(self._open[index:]):
             self.elements.append(collapse("".join(parts)))
         del self._open[index:]
 
     def handle_starttag(self, tag, attrs):
-        if tag in SKIPPED_TAGS:
-            self._skipping += 1
-            return
         for name, value in attrs:
             # A namespace is an identifier, not a link: `xmlns="http://www.w3.org/2000/svg"` is
             # the only spelling SVG accepts, and nothing fetches it.
             if value is not None and name != "xmlns" and not name.startswith("xmlns:"):
                 self.attributes.append((tag, name, value))
+        if tag in SKIPPED_TAGS:
+            self._skipped.append(tag)
+            return
+        if self._skipped:
+            return
         if tag not in INLINE_TAGS:
             self._append(" ")
         if tag in ("p", "li"):
@@ -130,7 +151,10 @@ class Page(HTMLParser):
 
     def handle_endtag(self, tag):
         if tag in SKIPPED_TAGS:
-            self._skipping = max(0, self._skipping - 1)
+            if tag in self._skipped:
+                del self._skipped[len(self._skipped) - 1 - self._skipped[::-1].index(tag):]
+            return
+        if self._skipped:
             return
         if tag not in INLINE_TAGS:
             self._append(" ")
@@ -141,8 +165,12 @@ class Page(HTMLParser):
                     break
 
     def handle_data(self, data):
-        if not self._skipping:
+        if not self._skipped:
             self._append(data)
+        elif self._skipped[-1] == "style":
+            self.stylesheets.append(data)
+        else:
+            self.unrendered.append(data)
 
 
 def canonical_units(readme):
@@ -151,18 +179,34 @@ def canonical_units(readme):
     Headings are skipped: the page is allowed its own heading markup and level, and the claims are
     the sentences under them.
     """
-    start = readme.text.find(CANONICAL_START)
-    end = readme.text.find(CANONICAL_END)
+    listing_start = readme.text.find(LISTING_START)
+    listing_end = readme.text.find(LISTING_END)
+    if listing_start < 0 or listing_end <= listing_start:
+        raise Failure(
+            f"{readme.where} has no listing-copy block between `{LISTING_START}` and `{LISTING_END}`, "
+            "so there is nothing to hold this page to. Rule: canonical paragraphs."
+        )
+    listing = readme.text[listing_start + len(LISTING_START):listing_end]
+    start = listing.find(CANONICAL_START)
+    end = listing.find(CANONICAL_END)
     if start < 0 or end <= start:
         raise Failure(
             f"{readme.where} does not mark its canonical paragraphs between `{CANONICAL_START}` and "
-            f"`{CANONICAL_END}`, so there is nothing to hold this page to. Rule: canonical paragraphs."
+            f"`{CANONICAL_END}` inside the listing copy, so there is nothing to hold this page to. "
+            "Rule: canonical paragraphs."
         )
-    block = readme.text[start + len(CANONICAL_START):end]
+    block = listing[start + len(CANONICAL_START):end]
     units = []
     for chunk in re.split(r"\n[ \t]*\n", block.strip()):
         lines = chunk.strip().splitlines()
-        if not lines or lines[0].startswith("#"):
+        if not lines:
+            continue
+        if lines[0].startswith("#"):
+            # The product's renderer refuses a heading with anything under it on the next line, so
+            # this cannot pass its build. Refused here too, rather than dropping the claim with the
+            # heading.
+            if len(lines) > 1:
+                raise Failure(f"{readme.where} has a canonical heading with text on the line below it: {chunk!r}")
             continue
         if lines[0].startswith("- "):
             items = []
@@ -194,18 +238,28 @@ def violations_in(page_html, rules, units):
     page = Page(page_html)
     violations = []
 
-    copy = " ".join([page.text] + [value for _, _, value in page.attributes])
+    copy = " ".join(
+        [page.text]
+        + page.unrendered
+        + [value for _, name, value in page.attributes if name in COPY_ATTRIBUTES]
+    )
     for key, name in WORD_RULES.items():
         for entry in rules[key]:
             if word_pattern(entry).search(copy):
                 violations.append((key, f"{name}: the page says \"{entry}\""))
 
-    plaintext = re.compile(r"http://", re.IGNORECASE)
+    plaintext = re.compile(r"http://[^\s\"'<>()]*", re.IGNORECASE)
+    reported = set()
     for tag, attribute, value in page.attributes:
-        if plaintext.search(value):
+        for match in plaintext.finditer(value):
+            reported.add(match.group(0).lower())
             violations.append(("https", f"<{tag} {attribute}=\"{value}\"> is not HTTPS"))
-    for match in re.finditer(r"http://\S*", page.text, re.IGNORECASE):
-        violations.append(("https", f"the page's text links {match.group(0)}, which is not HTTPS"))
+    for text in [page.text] + page.unrendered + page.stylesheets:
+        for match in plaintext.finditer(text):
+            # A link whose text is its own address is one plaintext link, not two.
+            if match.group(0).lower() not in reported:
+                reported.add(match.group(0).lower())
+                violations.append(("https", f"the page links {match.group(0)}, which is not HTTPS"))
 
     for number, unit in enumerate(units, start=1):
         if unit in page.elements:
@@ -242,14 +296,15 @@ NORMALISER_FIXTURE = [
         "SnippetVeil makes no network calls. No networking code — enforced on every pull request,\n"
         "  scanned in every release build.",
     ),
+    ("soft break", "it is not anonymized at all", "it is not anony<wbr>mized at all"),
 ]
 
 
-def fixture_page(units, before="", after="", replace=None, omit=None):
+def fixture_page(units, before="", after="", replace_index=None, replacement=None, omit=None):
     """A page carrying every canonical unit, built from the README rather than typed a second time.
 
-    Each unit is spelled the way a hand-written page spells it — emphasis as tags, the dash as an
-    entity, the text wrapped — so the cases below run through the same normaliser the real page does.
+    Each unit is spelled the way a hand-written page spells it — the dash as an entity, the text
+    wrapped — so the cases below run through the same normaliser the real page does.
     """
 
     def spelled(unit):
@@ -261,8 +316,7 @@ def fixture_page(units, before="", after="", replace=None, omit=None):
     for index, unit in enumerate(units):
         if index == omit:
             continue
-        text = replace(unit) if replace and index == replace.index else unit
-        items.append(f"  <li>{spelled(text)}</li>")
+        items.append(f"  <li>{spelled(replacement if index == replace_index else unit)}</li>")
     return (
         "<!doctype html><html><head><title>SnippetVeil</title></head><body>\n"
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"><rect x="0"/></svg>\n'
@@ -271,7 +325,7 @@ def fixture_page(units, before="", after="", replace=None, omit=None):
     )
 
 
-def self_test(rules, units):
+def self_test(rules, units, sources):
     """Proves the check can fail, and fails for the right reason, before it is trusted.
 
     A comparison whose red path is never exercised decays into a check that always passes.
@@ -297,25 +351,47 @@ def self_test(rules, units):
         for entry in rules[key]:
             if kinds(fixture_page(units, after=f"<p>It is {html.escape(entry)} here.</p>\n")) != [key]:
                 problems.append(f"the {WORD_RULES[key]} \"{entry}\" was not caught, or not caught alone")
+            if kinds(fixture_page(units, after=f'<script type="application/ld+json">{{"d": "{entry}"}}</script>\n')) != [key]:
+                problems.append(f"the {WORD_RULES[key]} \"{entry}\" in structured data was not caught")
 
-    if kinds(fixture_page(units, after='<p><a href="http://example.com/">a link</a></p>\n')) != ["https"]:
-        problems.append("an http:// link was not caught")
+    # A name in an address or a stylesheet is not copy: `…/spring-guide`, `cursor: pointer`.
+    addresses = "".join(f'<a href="https://example.com/{entry.replace(" ", "-")}-guide">a guide</a>' for entry in rules["thirdPartyBrands"])
+    stylesheet = "<style>" + " ".join(f".x {{ {entry.lower().replace(' ', '-')}: 1 }}" for entry in rules["thirdPartyBrands"]) + "</style>"
+    if kinds(fixture_page(units, after=f"<p>{addresses}</p>{stylesheet}\n")):
+        problems.append("a brand name inside a URL or a CSS property was flagged as copy")
 
-    class Reword:
-        index = len(units) // 2
+    for name, link in [
+        ("an http:// link whose text is its address", '<p><a href="http://example.com/">http://example.com/</a></p>'),
+        ("a script loaded over http://", '<script src="http://example.com/a.js"></script>'),
+        ("a stylesheet importing over http://", "<style>@import url(http://example.com/a.css);</style>"),
+    ]:
+        if kinds(fixture_page(units, after=link + "\n")) != ["https"]:
+            problems.append(f"{name} was not caught exactly once")
 
-        def __call__(self, unit):
-            words = unit.split(" ")
-            return " ".join(words[:-1] + ["differently."])
-
-    reworded = violations_in(fixture_page(units, replace=Reword()), rules, units)
-    expected = f"canonical paragraph {Reword.index + 1} is reworded"
+    reword_index = len(units) // 2
+    reworded = violations_in(
+        fixture_page(units, replace_index=reword_index, replacement=" ".join(units[reword_index].split(" ")[:-1] + ["differently."])),
+        rules,
+        units,
+    )
+    expected = f"canonical paragraph {reword_index + 1} is reworded"
     if len(reworded) != 1 or not reworded[0][1].startswith(expected):
         problems.append(f"a reworded canonical paragraph was not reported as {expected!r}: {reworded}")
 
-    absent = violations_in(fixture_page(units, omit=0), rules, units)
-    if len(absent) != 1 or not absent[0][1].startswith("canonical paragraph 1 is absent"):
-        problems.append(f"an absent canonical paragraph was not reported as absent: {absent}")
+    # The unit least like any other, so that "absent" cannot be mistaken for a rewording of a
+    # neighbour however the canonical lines are worded.
+    def likeness(index):
+        return max((difflib.SequenceMatcher(None, units[index], other).ratio() for i, other in enumerate(units) if i != index), default=0)
+
+    omit_index = min(range(len(units)), key=likeness)
+    expected = f"canonical paragraph {omit_index + 1} is absent"
+    for name, page_html in [
+        ("missing", fixture_page(units, omit=omit_index)),
+        ("only in a <template>", fixture_page(units, omit=omit_index, after=f"<template><p>{html.escape(units[omit_index])}</p></template>\n")),
+    ]:
+        absent = violations_in(page_html, rules, units)
+        if len(absent) != 1 or not absent[0][1].startswith(expected):
+            problems.append(f"a canonical paragraph {name} was not reported as {expected!r}: {absent}")
 
     # The one that matters most. A check that fails when the site edits its own words gets turned off.
     edited = fixture_page(units, before="<p>A status note this page wrote for itself.</p>\n").replace(
@@ -326,7 +402,8 @@ def self_test(rules, units):
 
     if problems:
         raise Failure(
-            "The check failed its own red path, so what it would report about the page is unknown:\n"
+            "The check failed its own red path, so what it would report about the page is unknown. It read:\n"
+            + "".join(f"  {source.where}\n" for source in sources)
             + "\n".join(f"  {problem}" for problem in problems)
         )
 
@@ -356,7 +433,7 @@ def main():
         readme_source = fetch("README.md", arguments.readme)
         rules = word_rules(rules_source)
         units = canonical_units(readme_source)
-        self_test(rules, units)
+        self_test(rules, units, [rules_source, readme_source])
 
         page_path = Path(arguments.page)
         violations = violations_in(page_path.read_text("utf-8"), rules, units)
