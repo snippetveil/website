@@ -30,10 +30,25 @@ block, alongside the listing and the product README.
 The comparison is on plain text: tags stripped, entities decoded, emphasis unwrapped, whitespace
 collapsed. So `<strong>` against `**`, `&mdash;` against `—`, and a wrapped line against one long
 one all compare equal. Everything outside the canonical paragraphs — the install line, the status
-note, the footer — is this page's own, and changing it does not fail the check. Before it reads the
-page, every run proves the check against fixture pages: each word on the lists caught, an `http://`
-link caught, a canonical paragraph reworded or missing caught, and the page's own words changed
-passing.
+note, the footer — is this page's own, and changing its words does not fail the check, as long as
+any version it names is the current release. Before it reads the page, every run proves the check
+against fixture pages: each word on the lists caught, an `http://` link caught, a canonical
+paragraph reworded or missing caught, and the page's own words changed passing; and a page naming an
+older release, a version with no release, the current release, and the current release without its
+`v` — the first two caught, the last two passing.
+
+It also reads the product's releases from the GitHub Releases API. Every release-shaped version
+string on the page — `v1.4.0` or `1.4.0`, in the text, an attribute or a link — must be the newest
+release that is neither a draft nor a prerelease. Versions are found by pattern, so rewriting the
+status note does not break the check and a version added anywhere else is checked too. A failure
+says which way the page is wrong: behind the latest release, or naming a release that does not
+exist. The Marketplace is not read: it lags manual review, and the page is right as soon as the
+release is published.
+
+If the releases cannot be read — GitHub unavailable, or the unauthenticated rate limit reached — the
+run fails. A check that goes green without looking would let a stale version through unnoticed. The
+failure says *not checked*, names the version the page carries, reports the other rules on their
+own, and says to re-run; it names no rule the page breaks.
 
 It reads `main` rather than a pinned ref, deliberately. A phrase added there can turn this repository
 red without a commit here. When that happens, the failure names the file it read, where it read it
@@ -42,8 +57,11 @@ by choosing whichever version reads better.
 
 To run it locally against a checkout of the product repository instead of `main`:
 `python3 checks/copy_rules.py --rules ../snippetveil-code/copy-rules.json --readme ../snippetveil-code/README.md`.
+Add `--releases releases.json`, a saved response of the releases API, to check offline too.
 
-The status note is the one part that is specific to this page. It says the plugin is published and
+The status note is the one part that is specific to this page. It names the current release, which
+the check above holds to the latest one, so publishing a release turns this repository red until the
+note is updated. It says the plugin is published and
 that the checks behind the *no network* paragraph are in place — both of which are now true, and
 both of which have to stay true for the note to stand. **Rewrite it when either changes; do not
 delete it.** A page with no status says less than one that states today's.

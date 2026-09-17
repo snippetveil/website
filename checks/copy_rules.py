@@ -15,8 +15,15 @@ The script reads `main`, not a pinned ref, and that was decided. A phrase added 
 repository red without a commit here. The rule is that *no surface says this*, and a page that stays
 green on last month's list does not obey it.
 
+Every release-shaped version the page names must also be the product's current release: the newest
+release of snippetveil/snippetveil that is neither a draft nor a prerelease, read from the GitHub
+Releases API. Not the Marketplace, which answers only once manual review has finished; the page is
+right the moment a release is published. If the API cannot be read, the run fails, and says that
+the version was not checked rather than that it is wrong (see `could_not_check`).
+
 Standard library only, so the repository keeps no build system and no dependencies. Every run first
-proves that the check can fail (see `self_test`) before it reports that the page passed.
+proves that the check can fail (see `self_test` and `release_self_test`) before it reports that the
+page passed.
 """
 
 import argparse
@@ -25,6 +32,7 @@ import html
 import json
 import re
 import sys
+import urllib.error
 import urllib.request
 from html.parser import HTMLParser
 from pathlib import Path
@@ -32,6 +40,7 @@ from pathlib import Path
 REPOSITORY = "snippetveil/snippetveil"
 REF = "main"
 RAW = f"https://raw.githubusercontent.com/{REPOSITORY}/{REF}/"
+RELEASES_API = f"https://api.github.com/repos/{REPOSITORY}/releases"
 
 # The canonical markers are looked for inside the listing-copy block only, which is the one place the
 # product build asserts where they are. A marker quoted anywhere else in the README is not the subset.
@@ -279,6 +288,133 @@ def violations_in(page_html, rules, units):
 
 
 # ---------------------------------------------------------------------------------------------------
+# The current release: every version the page names is the newest release of the product.
+# ---------------------------------------------------------------------------------------------------
+
+# A release-shaped version: three numbers, an optional leading `v`, an optional prerelease suffix. Not
+# part of a longer dotted run (an address, a four-part number) and not the tail of a word.
+VERSION = re.compile(r"(?<![\w.])[vV]?\d+\.\d+\.\d+(?:-[0-9A-Za-z]+(?:\.[0-9A-Za-z]+)*)?(?![\w-]|\.\d)")
+
+
+class Unchecked(Exception):
+    """The releases could not be read. Not a finding about the page, and not a pass either."""
+
+
+def normalised(version):
+    """A version as a number, so `v1.4.0` and `1.4.0` are the same release."""
+    return version[1:] if version[:1] in ("v", "V") else version
+
+
+def numbers(version):
+    return tuple(int(part) for part in re.match(r"\d+\.\d+\.\d+", normalised(version)).group(0).split("."))
+
+
+class Releases:
+    """The product repository's releases, and the one that is current: the newest by `created_at`
+    that is neither a draft nor a prerelease, which is the rule GitHub documents for its latest
+    release."""
+
+    def __init__(self, where, entries):
+        self.where = where
+        if not isinstance(entries, list) or not all(
+            isinstance(entry, dict) and isinstance(entry.get("tag_name"), str) and isinstance(entry.get("created_at"), str)
+            for entry in entries
+        ):
+            raise Unchecked(f"{where} is not a list of releases with a `tag_name` and a `created_at` each.")
+        published = [entry for entry in entries if not entry.get("draft") and not entry.get("prerelease")]
+        if not published:
+            raise Unchecked(f"{where} lists no release that is neither a draft nor a prerelease, so there is no current release.")
+        self.latest = max(published, key=lambda entry: entry["created_at"])
+        if not VERSION.fullmatch(self.latest["tag_name"]):
+            raise Unchecked(f"The latest release in {where} is tagged {self.latest['tag_name']!r}, which is not a version.")
+        self.published = {normalised(entry["tag_name"]) for entry in published}
+        self.prereleases = {normalised(entry["tag_name"]) for entry in entries if not entry.get("draft") and entry.get("prerelease")}
+
+    def describe_latest(self):
+        url = self.latest.get("html_url")
+        return f"{self.latest['tag_name']}" + (f" ({url})" if url else "")
+
+
+def fetch_releases(override):
+    if override:
+        where = f"{override} (a local override of {RELEASES_API})"
+        try:
+            return Releases(where, json.loads(Path(override).read_text("utf-8")))
+        except (OSError, ValueError) as error:
+            raise Unchecked(f"Could not read {where}: {error}.")
+    entries = []
+    url = RELEASES_API + "?per_page=100"
+    try:
+        while url:
+            request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
+            with urllib.request.urlopen(request, timeout=30) as response:
+                page = json.load(response)
+                link = re.search(r'<([^>]+)>;\s*rel="next"', response.headers.get("Link") or "")
+            if not isinstance(page, list):
+                raise ValueError(f"expected a list of releases, got {type(page).__name__}")
+            entries.extend(page)
+            url = link.group(1) if link else None
+    except Exception as error:
+        limited = isinstance(error, urllib.error.HTTPError) and error.code in (403, 429)
+        raise Unchecked(
+            f"Could not read the releases from {RELEASES_API}: {error}."
+            + (" The API allows 60 unauthenticated reads an hour per address, so this is most likely that limit." if limited else "")
+        )
+    return Releases(RELEASES_API, entries)
+
+
+def named_versions(page_html):
+    """Every release-shaped version the page names, with where it names it: its text, the text it does
+    not show in reading order, and every attribute, links included.
+
+    Found by pattern, not by the status note's wording: the note exists to be rewritten, and a
+    version added anywhere else is checked by arriving.
+    """
+    page = Page(page_html)
+    named = []
+
+    def context(text, match):
+        before = re.search(r"(?:\S+\s+){0,5}\S*$", text[:match.start()]).group(0)
+        after = re.match(r"\S*(?:\s+\S+){0,5}", text[match.end():]).group(0)
+        return f"“{before}{match.group(0)}{after}”"
+
+    for text in [page.text] + [collapse(text) for text in page.unrendered]:
+        for match in VERSION.finditer(text):
+            named.append((match.group(0), context(text, match)))
+    for tag, attribute, value in page.attributes:
+        for match in VERSION.finditer(value):
+            named.append((match.group(0), f"<{tag} {attribute}=\"{value}\">"))
+    return named
+
+
+def release_findings(page_html, releases):
+    """The versions the page names, and each one that is not the current release, saying which way it
+    is wrong."""
+    named = named_versions(page_html)
+    latest = releases.latest["tag_name"]
+    violations = []
+    for version, where in named:
+        number = normalised(version)
+        if number == normalised(latest):
+            continue
+        if number in releases.published:
+            if numbers(version) < numbers(latest):
+                message = f"the page is behind the latest release: it names {version}, an earlier release, in {where}"
+            else:
+                message = f"the page names {version}, a release but not the newest one, in {where}"
+        elif number in releases.prereleases:
+            message = f"the page names {version}, which is a prerelease and not a release, in {where}"
+        else:
+            # The worse of the two directions: not late, but a claim about something that does not exist.
+            message = (
+                f"the page names a release that does not exist: {REPOSITORY} has no release {version}, "
+                f"and a reader who looks for it will not find it, in {where}"
+            )
+        violations.append(("release", f"{message}\n      latest release: {releases.describe_latest()}"))
+    return named, violations
+
+
+# ---------------------------------------------------------------------------------------------------
 # The red path, run before the real page is read.
 # ---------------------------------------------------------------------------------------------------
 
@@ -408,6 +544,57 @@ def self_test(rules, units, sources):
         )
 
 
+# Listed newest first, as the API lists them, with a draft and a prerelease ahead of the release that
+# is current, so that picking the first entry instead of the newest release is caught.
+RELEASES_FIXTURE = [
+    {"tag_name": "v1.5.0", "draft": True, "prerelease": False, "created_at": "2026-09-20T00:00:00Z"},
+    {"tag_name": "v1.5.0-rc.1", "draft": False, "prerelease": True, "created_at": "2026-09-19T00:00:00Z"},
+    {"tag_name": "v1.4.0", "draft": False, "prerelease": False, "created_at": "2026-09-17T00:00:00Z"},
+    {"tag_name": "v1.3.0", "draft": False, "prerelease": False, "created_at": "2026-09-10T00:00:00Z"},
+]
+
+
+def release_self_test():
+    """Proves the release check can fail, in both directions, and can pass without being inert."""
+    releases = Releases("the fixture releases", RELEASES_FIXTURE)
+    problems = []
+    if releases.latest["tag_name"] != "v1.4.0":
+        problems.append(f"the latest release was read as {releases.latest['tag_name']}, not v1.4.0, past a draft and a prerelease")
+
+    def status(version):
+        return f"<p><strong>Published.</strong> {version} is on the Marketplace.</p>\n"
+
+    for name, page_html, expected, direction in [
+        ("an older release", status("v1.3.0"), ["v1.3.0"], "behind"),
+        ("a version with no release", status("v1.9.0"), ["v1.9.0"], "no release"),
+        ("a draft's version", status("v1.5.0"), ["v1.5.0"], "no release"),
+        ("a prerelease's version", status("1.5.0-rc.1"), ["1.5.0-rc.1"], "prerelease"),
+        ("the current release", status("v1.4.0"), ["v1.4.0"], None),
+        ("the current release without its `v`", status("1.4.0"), ["1.4.0"], None),
+        # By pattern, not by position: the status note rewritten, and a version somewhere new.
+        ("the current release in other words", "<p>Version 1.4.0, as of this week.</p>\n", ["1.4.0"], None),
+        ("an older release in an attribute", '<p><a href="https://example.com/" title="v1.3.0 notes">notes</a></p>\n', ["v1.3.0"], "behind"),
+        ("an older release in a link", '<p><a href="https://example.com/releases/tag/v1.3.0">notes</a></p>\n', ["v1.3.0"], "behind"),
+        ("no version at all", "", [], None),
+        # Not release-shaped: two parts, four parts, part of a word.
+        ("numbers that are not a version", '<meta name="viewport" content="initial-scale=1.0"><p>192.168.0.1 and x1.4.0</p>\n', [], None),
+    ]:
+        named, violations = release_findings(fixture_page([], before=page_html), releases)
+        spelled = [version for version, _ in named]
+        if spelled != expected:
+            problems.append(f"on a page naming {name}, the check read the versions {spelled}, not {expected}")
+        if direction is None and violations:
+            problems.append(f"a page naming {name} was flagged: {violations}")
+        if direction is not None and (len(violations) != 1 or direction not in violations[0][1]):
+            problems.append(f"a page naming {name} was not reported once as {direction!r}: {violations}")
+
+    if problems:
+        raise Failure(
+            "The release check failed its own red path, so what it would report about the page is unknown.\n"
+            + "\n".join(f"  {problem}" for problem in problems)
+        )
+
+
 def word_rules(source):
     try:
         rules = json.loads(source.text)
@@ -426,6 +613,7 @@ def main():
     parser.add_argument("--page", default=str(root / "public" / "index.html"))
     parser.add_argument("--rules", help="read copy-rules.json from this path instead of fetching it")
     parser.add_argument("--readme", help="read README.md from this path instead of fetching it")
+    parser.add_argument("--releases", help="read the releases, as the API lists them, from this JSON file instead of fetching them")
     arguments = parser.parse_args()
 
     try:
@@ -434,18 +622,33 @@ def main():
         rules = word_rules(rules_source)
         units = canonical_units(readme_source)
         self_test(rules, units, [rules_source, readme_source])
+        release_self_test()
 
         page_path = Path(arguments.page)
-        violations = violations_in(page_path.read_text("utf-8"), rules, units)
+        page_html = page_path.read_text("utf-8")
+        violations = violations_in(page_html, rules, units)
     except Failure as failure:
         print(f"::error::{str(failure).splitlines()[0]}", file=sys.stderr)
         print(failure, file=sys.stderr)
         return 1
 
+    # The releases are read after the other rules have been checked, and a failure to read them does
+    # not stop those rules reporting: one unreachable API should not hide a banned phrase.
+    try:
+        releases = fetch_releases(arguments.releases)
+    except Unchecked as error:
+        releases, unchecked = None, error
+        named = named_versions(page_html)
+    else:
+        unchecked = None
+        named, release_violations = release_findings(page_html, releases)
+        violations += release_violations
+
     page_name = page_path.relative_to(root) if page_path.is_relative_to(root) else page_path
     read_from = (
         f"  word lists:           {rules_source.where}\n"
         f"  canonical paragraphs: {readme_source.where}"
+        + (f"\n  releases:             {releases.where}" if releases else "")
     )
     if violations:
         def rule(key):
@@ -453,20 +656,36 @@ def main():
                 return f"canonical paragraphs, {readme_source.name}"
             if key == "https":
                 return "https-only links"
+            if key == "release":
+                return "current release"
             return f"{key}, {rules_source.name}"
 
-        print(f"::error::{page_name} breaks {len(violations)} copy rule(s) read from {REPOSITORY}@{REF}", file=sys.stderr)
+        print(f"::error::{page_name} breaks {len(violations)} copy rule(s) read from {REPOSITORY}", file=sys.stderr)
         print(f"{page_name} breaks the product's copy rules, read from:\n{read_from}\n", file=sys.stderr)
         for key, message in violations:
             print(f"  [{rule(key)}] {message}", file=sys.stderr)
-        if not (arguments.rules and arguments.readme):
+        if not (arguments.rules and arguments.readme and arguments.releases):
             print(
-                f"\nThese rules are read from {REPOSITORY}'s `{REF}`, not a pinned ref: a rule added there applies\n"
-                "here without a commit in this repository, which is why this can go red on a page nobody touched.",
+                f"\nThese rules are read from {REPOSITORY}'s `{REF}` and its releases, not a pinned ref: a rule\n"
+                "added there, or a release published, applies here without a commit in this repository, which is\n"
+                "why this can go red on a page nobody touched.",
                 file=sys.stderr,
             )
+        kinds = {key for key, _ in violations}
+        if "canonical" in kinds:
+            print("A canonical paragraph is fixed by restoring the settled wording, not by rewording the README.", file=sys.stderr)
+        if "release" in kinds:
+            print("A version is fixed by rewriting the status note to name the latest release.", file=sys.stderr)
+        if unchecked:
+            print(f"\n{could_not_check(unchecked, named)}", file=sys.stderr)
+        return 1
+
+    if unchecked:
+        # Red, not green. See `could_not_check`.
+        print(f"::error::Could not check the release {page_name} names: {unchecked}", file=sys.stderr)
         print(
-            "A canonical paragraph is fixed by restoring the settled wording, not by rewording the README.",
+            f"{page_name} was NOT fully checked. The other copy rules pass, read from:\n{read_from}\n\n"
+            f"{could_not_check(unchecked, named)}",
             file=sys.stderr,
         )
         return 1
@@ -475,9 +694,27 @@ def main():
     print(
         f"Checked: {sum(len(rules[key]) for key in WORD_RULES)} phrases and names "
         f"({', '.join(f'{len(rules[key])} {key}' for key in WORD_RULES)}), https-only links, "
-        f"and {len(units)} canonical paragraphs verbatim."
+        f"{len(units)} canonical paragraphs verbatim, and {len(named)} version string(s) "
+        f"({', '.join(version for version, _ in named) or 'the page names none'}) against the latest release, "
+        f"{releases.latest['tag_name']}."
     )
     return 0
+
+
+def could_not_check(unchecked, named):
+    """What an unreachable releases API means, said so that it cannot be read as a pass.
+
+    It fails the run. A check that goes green when it could not look says nothing, and on this page
+    a stale version is exactly what would go out unnoticed. It is kept apart from a finding, though:
+    it names no rule the page breaks, says the page may well be right, and says what to do, so that
+    re-running it is the informed step rather than the reflex.
+    """
+    versions = ", ".join(version for version, _ in named) or "no version string"
+    return (
+        f"Not checked: whether the version the page names is the latest release. {unchecked}\n"
+        f"The page names {versions}. This is not a finding about the page, which may well be current;\n"
+        "it is that nothing compared it. Re-run once the API answers."
+    )
 
 
 if __name__ == "__main__":
