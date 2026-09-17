@@ -8,6 +8,11 @@
 # that stays green on last month's list does not obey it. The failure names the file it read and
 # where it read it from.
 #
+# It also reads snippetveil/snippetveil's releases from the GitHub Releases API, unauthenticated, and
+# fails if a version the page names is not the newest non-draft, non-prerelease release. Once a
+# release is published there, every run here is red until the status note names it. If the API cannot
+# be read, the run fails and says the version was not checked, not that it is wrong.
+#
 # No build system: the check is one standard-library Python script.
 name: Copy rules
 
