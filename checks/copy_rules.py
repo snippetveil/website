@@ -301,20 +301,25 @@ class Unchecked(Exception):
 
 
 def normalised(version):
-    """A version as a number, so `v1.4.0` and `1.4.0` are the same release."""
+    """A version without its leading `v`, so `v1.4.0` and `1.4.0` are the same release."""
     return version[1:] if version[:1] in ("v", "V") else version
 
 
-def numbers(version):
+def release_numbers(version):
+    """(major, minor, patch), to say whether a version is before or after another."""
     return tuple(int(part) for part in re.match(r"\d+\.\d+\.\d+", normalised(version)).group(0).split("."))
 
 
 class Releases:
-    """The product repository's releases, and the one that is current: the newest by `created_at`
-    that is neither a draft nor a prerelease, which is the rule GitHub documents for its latest
-    release."""
+    """The product repository's releases, and the one that is current.
 
-    def __init__(self, where, entries):
+    Online, the current release is the one GitHub itself calls latest (`/releases/latest`), which
+    also honours a release published as "not latest". Offline, and in the fixtures, it is worked out
+    by the rule GitHub documents for that endpoint: the newest by `created_at` that is neither a draft
+    nor a prerelease.
+    """
+
+    def __init__(self, where, entries, latest_tag=None):
         self.where = where
         if not isinstance(entries, list) or not all(
             isinstance(entry, dict) and isinstance(entry.get("tag_name"), str) and isinstance(entry.get("created_at"), str)
@@ -324,7 +329,12 @@ class Releases:
         published = [entry for entry in entries if not entry.get("draft") and not entry.get("prerelease")]
         if not published:
             raise Unchecked(f"{where} lists no release that is neither a draft nor a prerelease, so there is no current release.")
-        self.latest = max(published, key=lambda entry: entry["created_at"])
+        if latest_tag is None:
+            self.latest = max(published, key=lambda entry: entry["created_at"])
+        else:
+            self.latest = next((entry for entry in published if entry["tag_name"] == latest_tag), None)
+            if self.latest is None:
+                raise Unchecked(f"The latest release, {latest_tag}, is not among the releases {where} lists.")
         if not VERSION.fullmatch(self.latest["tag_name"]):
             raise Unchecked(f"The latest release in {where} is tagged {self.latest['tag_name']!r}, which is not a version.")
         self.published = {normalised(entry["tag_name"]) for entry in published}
@@ -345,6 +355,9 @@ def fetch_releases(override):
     entries = []
     url = RELEASES_API + "?per_page=100"
     try:
+        request = urllib.request.Request(RELEASES_API + "/latest", headers={"Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(request, timeout=30) as response:
+            latest_tag = json.load(response)["tag_name"]
         while url:
             request = urllib.request.Request(url, headers={"Accept": "application/vnd.github+json"})
             with urllib.request.urlopen(request, timeout=30) as response:
@@ -360,12 +373,12 @@ def fetch_releases(override):
             f"Could not read the releases from {RELEASES_API}: {error}."
             + (" The API allows 60 unauthenticated reads an hour per address, so this is most likely that limit." if limited else "")
         )
-    return Releases(RELEASES_API, entries)
+    return Releases(RELEASES_API, entries, latest_tag)
 
 
 def named_versions(page_html):
-    """Every release-shaped version the page names, with where it names it: its text, the text it does
-    not show in reading order, and every attribute, links included.
+    """Every release-shaped version the page names, with where it names it: its text, its scripts,
+    templates and stylesheets, and every attribute, links included.
 
     Found by pattern, not by the status note's wording: the note exists to be rewritten, and a
     version added anywhere else is checked by arriving.
@@ -378,7 +391,7 @@ def named_versions(page_html):
         after = re.match(r"\S*(?:\s+\S+){0,5}", text[match.end():]).group(0)
         return f"“{before}{match.group(0)}{after}”"
 
-    for text in [page.text] + [collapse(text) for text in page.unrendered]:
+    for text in [page.text] + [collapse(text) for text in page.unrendered + page.stylesheets]:
         for match in VERSION.finditer(text):
             named.append((match.group(0), context(text, match)))
     for tag, attribute, value in page.attributes:
@@ -398,10 +411,10 @@ def release_findings(page_html, releases):
         if number == normalised(latest):
             continue
         if number in releases.published:
-            if numbers(version) < numbers(latest):
+            if release_numbers(version) < release_numbers(latest):
                 message = f"the page is behind the latest release: it names {version}, an earlier release, in {where}"
             else:
-                message = f"the page names {version}, a release but not the newest one, in {where}"
+                message = f"the page is ahead of the latest release: it names {version}, a later release GitHub does not mark as latest, in {where}"
         elif number in releases.prereleases:
             message = f"the page names {version}, which is a prerelease and not a release, in {where}"
         else:
@@ -588,6 +601,11 @@ def release_self_test():
         if direction is not None and (len(violations) != 1 or direction not in violations[0][1]):
             problems.append(f"a page naming {name} was not reported once as {direction!r}: {violations}")
 
+    marked = Releases("the fixture releases", RELEASES_FIXTURE, latest_tag="v1.3.0")
+    _, violations = release_findings(fixture_page([], before=status("v1.4.0")), marked)
+    if marked.latest["tag_name"] != "v1.3.0" or len(violations) != 1 or "ahead" not in violations[0][1]:
+        problems.append(f"the release GitHub marks as latest was not the one the page is held to: {violations}")
+
     if problems:
         raise Failure(
             "The release check failed its own red path, so what it would report about the page is unknown.\n"
@@ -605,6 +623,26 @@ def word_rules(source):
         if not isinstance(entries, list) or not entries or not all(isinstance(entry, str) for entry in entries):
             raise Failure(f"{source.where} carries no non-empty `{key}` list. Rule not checked: {WORD_RULES[key]}s.")
     return rules
+
+
+def spelled(named):
+    return ", ".join(version for version, _ in named)
+
+
+def could_not_check(unchecked, named):
+    """What an unreachable releases API means, said so that it cannot be read as a pass.
+
+    It fails the run. A check that goes green when it could not look says nothing, and on this page
+    a stale version is exactly what would go out unnoticed. It is kept apart from a finding, though:
+    it names no rule the page breaks, says the page may well be right, and says what to do, so that
+    re-running it is the informed step rather than the reflex.
+    """
+    versions = spelled(named) or "no version string"
+    return (
+        f"Not checked: whether the version the page names is the latest release. {unchecked}\n"
+        f"The page names {versions}. This is not a finding about the page, which may well be current;\n"
+        "it is that nothing compared it. Re-run once the API answers."
+    )
 
 
 def main():
@@ -660,15 +698,20 @@ def main():
                 return "current release"
             return f"{key}, {rules_source.name}"
 
-        print(f"::error::{page_name} breaks {len(violations)} copy rule(s) read from {REPOSITORY}", file=sys.stderr)
+        print(f"::error::{page_name} breaks {len(violations)} copy rule(s) read from {REPOSITORY}@{REF}", file=sys.stderr)
         print(f"{page_name} breaks the product's copy rules, read from:\n{read_from}\n", file=sys.stderr)
         for key, message in violations:
             print(f"  [{rule(key)}] {message}", file=sys.stderr)
-        if not (arguments.rules and arguments.readme and arguments.releases):
+        if not (arguments.rules and arguments.readme):
             print(
-                f"\nThese rules are read from {REPOSITORY}'s `{REF}` and its releases, not a pinned ref: a rule\n"
-                "added there, or a release published, applies here without a commit in this repository, which is\n"
-                "why this can go red on a page nobody touched.",
+                f"\nThese rules are read from {REPOSITORY}'s `{REF}`, not a pinned ref: a rule added there applies\n"
+                "here without a commit in this repository, which is why this can go red on a page nobody touched.",
+                file=sys.stderr,
+            )
+        if "release" in {key for key, _ in violations} and not arguments.releases:
+            print(
+                f"\nThe latest release is read from {REPOSITORY}'s releases as they are now, so publishing one turns\n"
+                "the next run red on a page nobody touched.",
                 file=sys.stderr,
             )
         kinds = {key for key, _ in violations}
@@ -695,26 +738,10 @@ def main():
         f"Checked: {sum(len(rules[key]) for key in WORD_RULES)} phrases and names "
         f"({', '.join(f'{len(rules[key])} {key}' for key in WORD_RULES)}), https-only links, "
         f"{len(units)} canonical paragraphs verbatim, and {len(named)} version string(s) "
-        f"({', '.join(version for version, _ in named) or 'the page names none'}) against the latest release, "
+        f"({spelled(named) or 'the page names none'}) against the latest release, "
         f"{releases.latest['tag_name']}."
     )
     return 0
-
-
-def could_not_check(unchecked, named):
-    """What an unreachable releases API means, said so that it cannot be read as a pass.
-
-    It fails the run. A check that goes green when it could not look says nothing, and on this page
-    a stale version is exactly what would go out unnoticed. It is kept apart from a finding, though:
-    it names no rule the page breaks, says the page may well be right, and says what to do, so that
-    re-running it is the informed step rather than the reflex.
-    """
-    versions = ", ".join(version for version, _ in named) or "no version string"
-    return (
-        f"Not checked: whether the version the page names is the latest release. {unchecked}\n"
-        f"The page names {versions}. This is not a finding about the page, which may well be current;\n"
-        "it is that nothing compared it. Re-run once the API answers."
-    )
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ block, alongside the listing and the product README.
 
 **These rules are checked, not remembered.** `.github/workflows/copy-rules.yml` runs
 `checks/copy_rules.py` on every push and pull request. It fetches two files from
-`snippetveil/snippetveil` at `main`:
+`snippetveil/snippetveil` at `main`, and that repository's releases:
 
 - `copy-rules.json` — the banned phrases, roadmap phrases and third-party brand names. None of them
   may appear anywhere in `public/index.html`, and no link may be plain `http`.
@@ -39,11 +39,11 @@ older release, a version with no release, the current release, and the current r
 
 It also reads the product's releases from the GitHub Releases API. Every release-shaped version
 string on the page — `v1.4.0` or `1.4.0`, in the text, an attribute or a link — must be the newest
-release that is neither a draft nor a prerelease. Versions are found by pattern, so rewriting the
-status note does not break the check and a version added anywhere else is checked too. A failure
-says which way the page is wrong: behind the latest release, or naming a release that does not
-exist. The Marketplace is not read: it lags manual review, and the page is right as soon as the
-release is published.
+release that is neither a draft nor a prerelease, as GitHub's `/releases/latest` names it. Versions
+are found by pattern, so rewriting the status note does not break the check and a version added
+anywhere else is checked too. A failure says which way the page is wrong: behind the latest release,
+or naming a release that does not exist. The Marketplace is not read: it lags manual review, and the
+page is right as soon as the release is published.
 
 If the releases cannot be read — GitHub unavailable, or the unauthenticated rate limit reached — the
 run fails. A check that goes green without looking would let a stale version through unnoticed. The
@@ -60,11 +60,11 @@ To run it locally against a checkout of the product repository instead of `main`
 Add `--releases releases.json`, a saved response of the releases API, to check offline too.
 
 The status note is the one part that is specific to this page. It names the current release, which
-the check above holds to the latest one, so publishing a release turns this repository red until the
-note is updated. It says the plugin is published and
-that the checks behind the *no network* paragraph are in place — both of which are now true, and
-both of which have to stay true for the note to stand. **Rewrite it when either changes; do not
-delete it.** A page with no status says less than one that states today's.
+the check above holds to the latest one, so after a release is published the next run is red until
+the note names it. Nothing runs on a release by itself: update the note when you publish. It says
+the plugin is published and that the checks behind the *no network* paragraph are in place — both of
+which are now true, and both of which have to stay true for the note to stand. **Rewrite it when
+either changes; do not delete it.** A page with no status says less than one that states today's.
 
 ## Deploying
 
