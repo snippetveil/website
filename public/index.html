@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SnippetVeil</title>
-<meta name="description" content="Anonymize a Java or Kotlin snippet before you paste it into an AI chat. An IntelliJ IDEA plugin.">
+<meta name="description" content="Anonymize a Java or Kotlin snippet, or a database execution plan, before you paste it into an AI chat. An IntelliJ IDEA plugin.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <meta property="og:title" content="SnippetVeil">
-<meta property="og:description" content="Anonymize a Java or Kotlin snippet before you paste it into an AI chat. An IntelliJ IDEA plugin.">
+<meta property="og:description" content="Anonymize a Java or Kotlin snippet, or a database execution plan, before you paste it into an AI chat. An IntelliJ IDEA plugin.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://snippetveil.com/">
 <style>
@@ -97,7 +97,7 @@
     <h1>SnippetVeil</h1>
   </header>
 
-  <p class="lede">Anonymize a Java or Kotlin snippet before you paste it into an AI chat.</p>
+  <p class="lede">Anonymize a Java or Kotlin snippet, or a database execution plan, before you paste it into an AI chat.</p>
 
   <p>An IntelliJ IDEA plugin. Every name your project owns — classes, methods, fields, packages,
   string literals — is replaced with a placeholder before the snippet leaves the editor. The
@@ -129,6 +129,22 @@
     placeholders never reach your source; the clipboard keeps the anonymized reply either way.</li>
     <li>The mapping is per-project and stays on your machine. Placeholders are stable across
     invocations and IDE restarts, so a second snippet never contradicts the first.</li>
+    <li><strong>SQL in a Java file is read name by name</strong> where the IDE recognises it as SQL
+    or JPQL. <code>"SELECT state FROM billing.customers"</code> comes out as
+    <code>"SELECT col1 FROM schema2.table3"</code>, and a JPQL query's entity and field names take
+    the placeholders the class and its fields get everywhere else. A query SnippetVeil cannot read
+    in full is replaced whole, as one <code>"str1"</code>: SQL holding a parameter, a string or a
+    comment, JPQL with a name that does not resolve, and every query in a Kotlin file. Which queries
+    the IDE recognises depends on the plugins it has.</li>
+    <li><strong>Anonymize Execution Plan…</strong> reads an execution plan from the clipboard —
+    PostgreSQL, MySQL, SQL Server or Oracle, in the output forms each engine prints unambiguously —
+    and gives back the same plan with its table, column, index and alias names replaced and the
+    values in its conditions redacted. Every cost, row estimate and timing stays exactly as printed.
+    Copy the plan, then right-click → <strong>SnippetVeil</strong> → <strong>Anonymize Execution
+    Plan…</strong>; it always opens the preview first. A plan SnippetVeil cannot read safely is
+    refused, your clipboard is left as it was, and the message names the output option that works
+    where there is one. A plan's names are not added to the project's mapping, so the same plan
+    pasted twice comes back under different numbers.</li>
   </ul>
 
   <h2>No network</h2>
@@ -154,12 +170,13 @@
   </ul>
 
   <h2>Non-goals</h2>
-  <p>Not a secret scanner. Anonymization is unavailable outside supported source files. The
-  reversal actions are not gated by language.</p>
+  <p>Not a secret scanner. Anonymizing code is unavailable outside supported source files; an
+  execution plan is read from the clipboard, wherever you are. The reversal actions are not gated by
+  language.</p>
 
   <h2>Status</h2>
   <div class="note">
-    <p><strong>Published.</strong> v1.4.0 is on the JetBrains Marketplace, and every release is
+    <p><strong>Published.</strong> v1.5.0 is on the JetBrains Marketplace, and every release is
     signed. The build-time checks that fail on networking code are in place: they run on every pull
     request and again on the release itself, and they run from a clone with no account and no
     permission from anyone.</p>
