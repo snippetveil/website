@@ -111,6 +111,12 @@
   <ul>
     <li>Select Java or Kotlin code, then right-click → <strong>SnippetVeil</strong> →
     <strong>Copy Anonymized</strong>. The anonymized text is on your clipboard.</li>
+    <li><strong>Commented-out code is kept, with its names replaced.</strong> In a
+    <code>.java</code> or <code>.kt</code> file, a comment whose text is code, such as
+    <code>// this.customer.setOrder(order);</code>, comes out as
+    <code>// this.field2.method3(param4);</code>: every name in it takes the placeholder that name
+    gets in the code around it. A comment that is prose, such as a TODO or an explanation, is
+    stripped.</li>
     <li><strong>Anonymize with Preview…</strong> shows the code that will be copied beside its
     mapping table, with counts: <code>14 renamed · 3 unknown · 22 preserved · 2 comments
     stripped</code>. It is the only place you can anonymize <em>less</em> — keep comments for this
