@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>SnippetVeil</title>
-<meta name="description" content="Anonymize a Java or Kotlin snippet, or a database execution plan, before you paste it into an AI chat. An IntelliJ IDEA plugin.">
+<meta name="description" content="Anonymize a Java or Kotlin snippet, a stack trace, or a database execution plan, before you paste it into an AI chat. An IntelliJ IDEA plugin.">
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <meta property="og:title" content="SnippetVeil">
-<meta property="og:description" content="Anonymize a Java or Kotlin snippet, or a database execution plan, before you paste it into an AI chat. An IntelliJ IDEA plugin.">
+<meta property="og:description" content="Anonymize a Java or Kotlin snippet, a stack trace, or a database execution plan, before you paste it into an AI chat. An IntelliJ IDEA plugin.">
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://snippetveil.com/">
 <style>
@@ -97,7 +97,7 @@
     <h1>SnippetVeil</h1>
   </header>
 
-  <p class="lede">Anonymize a Java or Kotlin snippet, or a database execution plan, before you paste it into an AI chat.</p>
+  <p class="lede">Anonymize a Java or Kotlin snippet, a stack trace, or a database execution plan, before you paste it into an AI chat.</p>
 
   <p>An IntelliJ IDEA plugin. Every name your project owns — classes, methods, fields, packages,
   string literals — is replaced with a placeholder before the snippet leaves the editor. The
@@ -111,6 +111,12 @@
   <ul>
     <li>Select Java or Kotlin code, then right-click → <strong>SnippetVeil</strong> →
     <strong>Copy Anonymized</strong>. The anonymized text is on your clipboard.</li>
+    <li><strong>Commented-out code is kept, with its names replaced.</strong> In a
+    <code>.java</code> or <code>.kt</code> file, a comment whose text is code, such as
+    <code>// this.customer.setOrder(order);</code>, comes out as
+    <code>// this.field2.method3(param4);</code>: every name in it takes the placeholder that name
+    gets in the code around it. A comment that is prose, such as a TODO or an explanation, is
+    stripped.</li>
     <li><strong>Anonymize with Preview…</strong> shows the code that will be copied beside its
     mapping table, with counts: <code>14 renamed · 3 unknown · 22 preserved · 2 comments
     stripped</code>. It is the only place you can anonymize <em>less</em> — keep comments for this
@@ -145,6 +151,16 @@
     refused, your clipboard is left as it was, and the message names the output option that works
     where there is one. A plan's names are not added to the project's mapping, so the same plan
     pasted twice comes back under different numbers.</li>
+    <li><strong>Anonymize Stack Trace…</strong> reads a Java or Kotlin exception trace from the
+    clipboard and gives back the same trace with the package, class, method and file names your
+    project owns replaced by the placeholders your snippets already use, so its frames line up with
+    the code you sent beside it. Every line number stays as printed, and JDK and library frames keep
+    their names unless the library is your organization's; the module or classloader prefix on a
+    frame, such as <code>java.base/</code>, is removed. Every exception message and the thread name
+    become <code>str</code> placeholders, and a name the IDE cannot find becomes
+    <code>Unknown</code>. Copy the trace, then right-click → <strong>SnippetVeil</strong> →
+    <strong>Anonymize Stack Trace…</strong>; it always opens the preview first. A clipboard holding
+    anything besides the trace is refused, and your clipboard is left as it was.</li>
   </ul>
 
   <h2>No network</h2>
@@ -159,24 +175,25 @@
     If your proprietary value <em>is</em> the algorithm, SnippetVeil does nothing for you.</li>
     <li><strong>The prompt you type around the snippet.</strong> SnippetVeil anonymizes the code,
     not the sentence above it.</li>
-    <li><strong>Your stack trace</strong> — it is not anonymized at all.</li>
   </ul>
 
   <h2>What it does not preserve</h2>
   <ul>
     <li><strong>The text inside your strings</strong> — a string literal in your own code becomes
-    <code>"str1"</code>.</li>
-    <li><strong>Your comments</strong>, by default.</li>
+    <code>"str1"</code> → retype the value that matters into your prompt.</li>
+    <li><strong>Your comment prose</strong>, by default.</li>
+    <li><strong>Your exception messages</strong> → retype the message that matters into your
+    prompt.</li>
   </ul>
 
   <h2>Non-goals</h2>
   <p>Not a secret scanner. Anonymizing code is unavailable outside supported source files; an
-  execution plan is read from the clipboard, wherever you are. The reversal actions are not gated by
+  execution plan or a stack trace is read from the clipboard, wherever you are. The reversal actions are not gated by
   language.</p>
 
   <h2>Status</h2>
   <div class="note">
-    <p><strong>Published.</strong> v1.5.0 is on the JetBrains Marketplace, and every release is
+    <p><strong>Published.</strong> v1.6.0 is on the JetBrains Marketplace, and every release is
     signed. The build-time checks that fail on networking code are in place: they run on every pull
     request and again on the release itself, and they run from a clone with no account and no
     permission from anyone.</p>
